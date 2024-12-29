@@ -8,11 +8,11 @@ from __future__ import print_function
 import os, itertools, random, argparse, time, datetime
 import numpy as np
 import random
-from sklearn.metrics import mean_squared_error, mean_absolute_error,r2_score,explained_variance_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score
 from math import sqrt
 
 import scipy.sparse as sp
-from scipy.stats.stats import pearsonr
+from scipy.stats import pearsonr  # Updated import statement
 from models import *
 from data import *
 
