@@ -2,7 +2,7 @@
 import numpy as np
 import pickle as pkl
 import scipy.sparse as sp
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import eigsh  # Corrected import path
 import sys, os
 import torch
 import re

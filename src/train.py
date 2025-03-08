@@ -8,11 +8,11 @@ from __future__ import print_function
 import os, itertools, random, argparse, time, datetime
 import numpy as np
 import random
-from sklearn.metrics import mean_squared_error, mean_absolute_error,r2_score,explained_variance_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score
 from math import sqrt
 
 import scipy.sparse as sp
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr  # Updated import statement
 from models import *
 from data import *
 
@@ -85,8 +85,9 @@ np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 
 args.cuda = args.cuda and torch.cuda.is_available() 
-# device configuration
-device = torch.device(f"cuda:{args.gpu}" if args.cuda else "cpu")
+args.cuda = args.gpu is not None
+if args.cuda:
+    torch.cuda.set_device(args.gpu)
 logger.info('cuda %s', args.cuda)
 
 time_token = str(time.time()).split('.')[0] # tensorboard model
@@ -105,8 +106,7 @@ if args.mylog:
             os.chmod(err_file_path, stat.S_IWUSR) # write by owner: https://blog.csdn.net/cute_boy_/article/details/119926001
     logger.info('tensorboard logging to %s', tensorboard_log_dir)
 
-# Initialize DataBasicLoader with device
-data_loader = DataBasicLoader(args, device)
+data_loader = DataBasicLoader(args)
 
 if args.ablation is None:
     model = EpiGNN(args, data_loader)  
@@ -123,7 +123,8 @@ else:
         raise LookupError('can not find the model')
 
 logger.info('model %s', model)
-model.to(device)
+if args.cuda:
+    model.cuda()
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.weight_decay)
 pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print('#params:',pytorch_total_params)

@@ -146,7 +146,8 @@ class GraphConvLayer(nn.Module):
 class WOGlobal(nn.Module):
     def __init__(self, args, data):
         super().__init__()
-        # arguments setting
+        # Model without global transmission risk encoding
+        # Arguments setting
         self.adj = data.adj
         self.m = data.m
         self.w = args.window
@@ -171,11 +172,11 @@ class WOGlobal(nn.Module):
         else:
             self.extra = False
 
-        # Feature embedding
+        # Feature embedding using Region-Aware Convolution
         self.hidR = self.k*4*self.hidP + self.k
         self.backbone = RegionAwareConv(P=self.w, m=self.m, k=self.k, hidP=self.hidP)
 
-        # local spatial encoding
+        # local transmission risk encoding
         self.degree = data.degree_adj
         self.s_enc = nn.Linear(1, self.hidR)
 
@@ -206,6 +207,7 @@ class WOGlobal(nn.Module):
                 p.data.uniform_(-stdv, stdv)
     
     def forward(self, x, index, isEval=False):
+        # Forward pass of the model without global transmission risk
         #print(index.shape) batch_size
         batch_size = x.shape[0] # batchsize, w, m
 

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+
+# Import necessary modules
 from __future__ import absolute_import
 from __future__ import unicode_literals
 from __future__ import division
@@ -24,84 +26,93 @@ from ablation import baseline
 class EpiGNN(nn.Module):
     def __init__(self, args, data):
         super().__init__()
-        # arguments setting
-        self.adj = data.adj
-        self.m = data.m
-        self.w = args.window
-        self.n_layer = args.n_layer
-        self.droprate = args.dropout
-        self.hidR = args.hidR
-        self.hidA = args.hidA
-        self.hidP = args.hidP
-        self.k = args.k
-        self.s = args.s
-        self.n = args.n
-        self.res = args.res
-        self.hw = args.hw
-        self.dropout = nn.Dropout(self.droprate)
-
+        # Initialize the EpiGNN model with provided arguments and data.
+        # Arguments setting
+        self.adj = data.adj  # Adjacency matrix representing spatial relationships
+        self.m = data.m  # Number of regions
+        self.w = args.window  # Input sequence length (window size)
+        self.n_layer = args.n_layer  # Number of GCN layers
+        self.droprate = args.dropout  # Dropout rate for regularization
+        self.hidR = args.hidR  # Hidden dimension for region-aware convolution
+        self.hidA = args.hidA  # Hidden dimension for attention layers
+        self.hidP = args.hidP  # Hidden dimension for adaptive pooling
+        self.k = args.k  # Number of kernels in convolutional layers
+        self.s = args.s  # Kernel size for temporal convolution
+        self.n = args.n  # Number of GCN layers
+        self.res = args.res  # Residual connection flag
+        self.hw = args.hw  # Highway network flag
+        self.dropout = nn.Dropout(self.droprate)  # Dropout layer
+        
+        # Highway network for autoregressive component
         if self.hw > 0:
             self.highway = nn.Linear(self.hw, 1)
 
+        # Check for external features
         if args.extra:
             self.extra = True
             self.external = data.external
         else:
             self.extra = False
 
-        # Feature embedding
-        self.hidR = self.k*4*self.hidP + self.k
+        # Feature embedding using Region-Aware Convolution
+        self.hidR = self.k * 4 * self.hidP + self.k
         self.backbone = RegionAwareConv(P=self.w, m=self.m, k=self.k, hidP=self.hidP)
 
-        # global
-        self.WQ = nn.Linear(self.hidR, self.hidA)
-        self.WK = nn.Linear(self.hidR, self.hidA)
+        # Global transmission risk encoding
+        self.WQ = nn.Linear(self.hidR, self.hidA)  # Query projection
+        self.WK = nn.Linear(self.hidR, self.hidA)  # Key projection
         self.leakyrelu = nn.LeakyReLU(inplace=True)
-        self.t_enc = nn.Linear(1, self.hidR)
+        self.t_enc = nn.Linear(1, self.hidR)  # Temporal encoding
 
-        # local
-        self.degree = data.degree_adj
-        self.s_enc = nn.Linear(1, self.hidR)
+        # Local transmission risk encoding
+        self.degree = data.degree_adj  # Degree adjacency vector
+        self.s_enc = nn.Linear(1, self.hidR)  # Spatial encoding
 
-        # external resources
-        self.external_parameter = nn.Parameter(torch.FloatTensor(self.m, self.m), requires_grad=True)
+        # External resources (if any)
+        self.external_parameter = nn.Parameter(torch.FloatTensor(self.m, self.m))
 
-        # Graph Generator and GCN
-        self.d_gate = nn.Parameter(torch.FloatTensor(self.m, self.m), requires_grad=True)
+        # Graph Generator and GCN layers
+        self.d_gate = nn.Parameter(torch.FloatTensor(self.m, self.m))
         self.graphGen = GraphLearner(self.hidR)
-        self.GNNBlocks = nn.ModuleList([GraphConvLayer(in_features=self.hidR, out_features=self.hidR) for i in range(self.n)])
-        #self.GCNBlock1 = GraphConvLayer(in_features=self.hidR, out_features=self.hidR)
-        #self.GCNBlock2 = GraphConvLayer(in_features=self.hidR, out_features=self.hidR)
+        self.GNNBlocks = nn.ModuleList([
+            GraphConvLayer(in_features=self.hidR, out_features=self.hidR)
+            for _ in range(self.n)
+        ])
 
-        # prediction
+        # Prediction layer
         if self.res == 0:
-            self.output = nn.Linear(self.hidR*2, 1)
+            self.output = nn.Linear(self.hidR * 2, 1)
         else:
-            self.output = nn.Linear(self.hidR*(self.n+1), 1)
+            self.output = nn.Linear(self.hidR * (self.n + 1), 1)
 
-        self.init_weights()
-     
+        self.init_weights()  # Initialize model weights
+
     def init_weights(self):
+        # Initialize weights of the model using Xavier uniform distribution
         for p in self.parameters():
             if p.data.ndimension() >= 2:
-                nn.init.xavier_uniform_(p.data) # best
+                nn.init.xavier_uniform_(p.data)
             else:
                 stdv = 1. / math.sqrt(p.size(0))
                 p.data.uniform_(-stdv, stdv)
-    
+
     def forward(self, x, index, isEval=False):
-        #print(index.shape) batch_size
-        batch_size = x.shape[0] # batchsize, w, m
+        # Forward pass of the model
+        # x: Input data tensor of shape (batch_size, sequence_length, num_regions)
+        # index: Indices of the data samples
+        # isEval: Boolean flag indicating evaluation mode
 
-        # step 1: Use multi-scale convolution to extract feature embedding (SEFNet => RAConv).
-        temp_emb = self.backbone(x)
+        batch_size = x.shape[0]  # Get batch size
 
-        # step 2: generate global transmission risk encoding.
-        query = self.WQ(temp_emb) # batch, N, hidden
+        # Step 1: Feature embedding using Region-Aware Convolution
+        temp_emb = self.backbone(x)  # Shape: (batch_size, num_regions, hidR)
+
+        # Step 2: Generate global transmission risk encoding
+        query = self.WQ(temp_emb)  # Project features to query space
         query = self.dropout(query)
-        key = self.WK(temp_emb)
+        key = self.WK(temp_emb)    # Project features to key space
         key = self.dropout(key)
-        attn = torch.bmm(query, key.transpose(1, 2))
+        attn = torch.bmm(query, key.transpose(1, 2))  # Compute attention scores
         #attn = self.leakyrelu(attn)
         attn = F.normalize(attn, dim=-1, p=2, eps=1e-12)
         attn = torch.sum(attn, dim=-1)
@@ -109,17 +120,17 @@ class EpiGNN(nn.Module):
         t_enc = self.t_enc(attn)
         t_enc = self.dropout(t_enc)
 
-        # step 3: generate local transmission risk encoding.
+        # Step 3: Generate local transmission risk encoding
         # print(self.degree.shape) [self.m]
         d = self.degree.unsqueeze(1)
         s_enc = self.s_enc(d)
         s_enc = self.dropout(s_enc)
 
-        # Three embedding fusion.
+        # Three embedding fusion
         feat_emb = temp_emb + t_enc + s_enc
 
-        # step 4: Region-Aware Graph Learner
-        # load external resource
+        # Step 4: Region-Aware Graph Learner
+        # Load external resource
         if self.extra:
             extra_adj_list=[]
             zeros_mt = torch.zeros((self.m, self.m)).to(self.adj.device)
@@ -138,20 +149,20 @@ class EpiGNN(nn.Module):
             external_info = F.relu(external_info)
             #print(self.external_parameter)
 
-        # apply Graph Learner to generate a graph
+        # Apply Graph Learner to generate a graph
         d_mat = torch.mm(d, d.permute(1, 0))
         d_mat = torch.mul(self.d_gate, d_mat)
         d_mat = torch.sigmoid(d_mat)
         spatial_adj = torch.mul(d_mat, self.adj)
         adj = self.graphGen(temp_emb)
         
-        # if additional information => fusion
+        # If additional information => fusion
         if self.extra:
             adj = adj + spatial_adj + external_info
         else:
             adj = adj + spatial_adj
 
-        # get laplace adjacent matrix
+        # Get laplace adjacent matrix
         laplace_adj = getLaplaceMat(batch_size, self.m, adj)
         
         # Graph Convolution Network
@@ -174,7 +185,7 @@ class EpiGNN(nn.Module):
         # Final prediction
         node_state = torch.cat([node_state, feat_emb], dim=-1)
         res = self.output(node_state).squeeze(2)
-        # highway means autoregressive model
+        # Highway means autoregressive model
         if self.hw > 0:
             z = x[:, -self.hw:, :]
             z = z.permute(0, 2, 1).contiguous().view(-1, self.hw)
@@ -182,10 +193,11 @@ class EpiGNN(nn.Module):
             z = z.view(-1, self.m)
             res = res + z
         
-        # if evaluation, return some intermediate results
+        # If evaluation, return some intermediate results
         if isEval:
             imd = (adj, attn)
         else:
             imd = None
 
+        # Return the final output and any intermediate results
         return res, imd
