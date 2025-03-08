@@ -6,7 +6,8 @@ import os
 from torch.autograd import Variable
 
 class DataBasicLoader(object):
-    def __init__(self, args):
+    def __init__(self, args, device):
+        self.device = device  # Ensure device is set early
         self.cuda = args.cuda
         self.P = args.window # 20
         self.h = args.horizon # 1
@@ -33,6 +34,7 @@ class DataBasicLoader(object):
         self._pre_train(int(args.train * self.n), int((args.train + args.val) * self.n), self.n)
         self._split(int(args.train * self.n), int((args.train + args.val) * self.n), self.n)
         print('size of train/val/test sets',len(self.train[0]),len(self.val[0]),len(self.test[0]))
+        self.device = device
     
     def load_label_file(self, filename):
         labelfile = pd.read_csv("data/"+filename+".csv", header=None)
@@ -59,7 +61,7 @@ class DataBasicLoader(object):
         print('external information', extra_adj.shape)
         self.external = Variable(extra_adj)
         if args.cuda:
-            self.external = extra_adj.cuda()
+            self.external = extra_adj.to(self.device)
 
     def load_sim_mat(self, args):
         self.adj = torch.Tensor(np.loadtxt(open("data/{}.txt".format(args.sim_mat)), delimiter=','))
@@ -69,9 +71,9 @@ class DataBasicLoader(object):
         #self.adj = rowsum[:, np.newaxis] * self.adj * rowsum[np.newaxis, :]
         self.adj = Variable(self.adj)
         if args.cuda:
-            self.adj = self.adj.cuda()
-            self.orig_adj = self.orig_adj.cuda()
-            self.degree_adj = self.degree_adj.cuda()
+            self.adj = self.adj.to(self.device)
+            self.orig_adj = self.orig_adj.to(self.device)
+            self.degree_adj = self.degree_adj.to(self.device)
 
     def _pre_train(self, train, valid, test):
         self.train_set = train_set = range(self.P+self.h-1, train)
@@ -142,8 +144,8 @@ class DataBasicLoader(object):
             X = inputs[excerpt,:]
             Y = targets[excerpt,:]
             if (self.cuda):
-                X = X.cuda()
-                Y = Y.cuda()
+                X = X.to(self.device)
+                Y = Y.to(self.device)
             model_inputs = Variable(X)
             #print('x shape', X.shape) # batch_size window_size region_num
             #print('y shape', Y.shape)
@@ -152,4 +154,3 @@ class DataBasicLoader(object):
             yield data
             start_idx += batch_size
 
-   

@@ -98,7 +98,8 @@ class GraphLearner(nn.Module):
         return adj
 
 def getLaplaceMat(batch_size, m, adj):
-    i_mat = torch.eye(m).to(adj.device)
+    device = adj.device
+    i_mat = torch.eye(m).to(device)
     i_mat = i_mat.unsqueeze(0)
     o_mat = torch.ones(m).to(adj.device)
     o_mat = o_mat.unsqueeze(0)
