@@ -85,10 +85,19 @@ np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 
 args.cuda = args.cuda and torch.cuda.is_available() 
-args.cuda = args.gpu is not None
+args.cuda = args.gpu is not None and torch.cuda.is_available()
+
+# Create device object for consistent usage throughout the code
 if args.cuda:
-    torch.cuda.set_device(args.gpu)
-logger.info('cuda %s', args.cuda)
+    try:
+        torch.cuda.set_device(args.gpu)
+        device = torch.device(f'cuda:{args.gpu}')
+    except (AttributeError, AssertionError):
+        device = torch.device(f'cuda:{args.gpu}')
+else:
+    device = torch.device('cpu')
+
+logger.info('cuda %s, using device %s', args.cuda, device)
 
 time_token = str(time.time()).split('.')[0] # tensorboard model
 log_token = '%s.%s.w-%s.h-%s' % (args.model, args.dataset, args.window, args.horizon)
@@ -106,7 +115,8 @@ if args.mylog:
             os.chmod(err_file_path, stat.S_IWUSR) # write by owner: https://blog.csdn.net/cute_boy_/article/details/119926001
     logger.info('tensorboard logging to %s', tensorboard_log_dir)
 
-data_loader = DataBasicLoader(args)
+# Pass device to DataBasicLoader
+data_loader = DataBasicLoader(args, device)
 
 if args.ablation is None:
     model = EpiGNN(args, data_loader)  
@@ -123,8 +133,9 @@ else:
         raise LookupError('can not find the model')
 
 logger.info('model %s', model)
+# When using the model, ensure it's moved to the device
 if args.cuda:
-    model.cuda()
+    model = model.to(device)
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.weight_decay)
 pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print('#params:',pytorch_total_params)

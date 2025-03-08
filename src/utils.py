@@ -12,7 +12,6 @@ import torch.nn.functional as F
 from sklearn import preprocessing
 from sklearn.metrics import mean_absolute_error
 from scipy.signal import find_peaks
- 
 
 # get laplace matrix
 def getLaplaceMat(batch_size, m, adj):
