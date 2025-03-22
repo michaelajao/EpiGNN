@@ -10,6 +10,7 @@ import numpy as np
 import random
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score
 from math import sqrt
+import csv
 
 import scipy.sparse as sp
 from scipy.stats import pearsonr  # Updated import statement
@@ -74,6 +75,9 @@ print('--------------------------')
 
 os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
 
+os.makedirs('result', exist_ok=True)
+os.makedirs('save', exist_ok=True)
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -83,6 +87,12 @@ from torch.utils.data import DataLoader
 random.seed(args.seed)
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
+
+torch.cuda.manual_seed(args.seed)
+torch.cuda.manual_seed_all(args.seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 
 args.cuda = args.cuda and torch.cuda.is_available() 
 args.cuda = args.gpu is not None and torch.cuda.is_available()
@@ -323,3 +333,21 @@ if args.eval != '':
         f.write("\n" + "window" + str(args.window) + "horizon" + str(args.horizon) + "\n")
         f.write(str(attn))
         f.write('\n')
+        
+metrics = [mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae]
+
+csv_filename = "result/metrics.csv"
+header = ['dataset', 'horizon', 'mae', 'std_mae', 'rmse', 'rmse_states', 'pcc', 'pcc_states', 'mape', 'r2', 'r2_states', 'var', 'var_states', 'peak_mae']
+
+# Check if file exists or not to write header only once (optional)
+try:
+    with open(csv_filename, 'x', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(header)
+except FileExistsError:
+    pass
+
+# After evaluation, write a new row with the metrics and parameters
+with open(csv_filename, mode='a', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow([args.dataset, args.horizon, mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae])
