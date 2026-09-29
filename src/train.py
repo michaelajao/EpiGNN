@@ -110,7 +110,7 @@ else:
 logger.info('cuda %s, using device %s', args.cuda, device)
 
 time_token = str(time.time()).split('.')[0] # tensorboard model
-log_token = '%s.%s.w-%s.h-%s' % (args.model, args.dataset, args.window, args.horizon)
+log_token = '%s.%s.w-%s.h-%s.seed-%s' % (args.model, args.dataset, args.window, args.horizon, args.seed)
 
 if args.mylog:
     tensorboard_log_dir = 'tensorboard/%s' % (log_token)
@@ -336,18 +336,38 @@ if args.eval != '':
         
 metrics = [mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae]
 
-csv_filename = "result/metrics.csv"
-header = ['dataset', 'horizon', 'mae', 'std_mae', 'rmse', 'rmse_states', 'pcc', 'pcc_states', 'mape', 'r2', 'r2_states', 'var', 'var_states', 'peak_mae']
+# Multi-seed campaign rows go to their own file so legacy metrics.csv stays intact.
+csv_filename = "result/metrics_singlestep.csv"
+header = ['dataset', 'horizon', 'model', 'seed', 'mae', 'std_mae', 'rmse', 'rmse_states', 'pcc', 'pcc_states', 'mape', 'r2', 'r2_states', 'var', 'var_states', 'peak_mae']
 
-# Check if file exists or not to write header only once (optional)
-try:
+if not os.path.exists(csv_filename):
     with open(csv_filename, 'x', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(header)
-except FileExistsError:
-    pass
 
 # After evaluation, write a new row with the metrics and parameters
 with open(csv_filename, mode='a', newline='') as file:
     writer = csv.writer(file)
-    writer.writerow([args.dataset, args.horizon, mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae])
+    writer.writerow([args.dataset, args.horizon, args.model, args.seed, mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae])
+
+# Persist per-timestep test predictions for Diebold-Mariano testing,
+# in the same schema MSAGAT-Net writes to report/predictions/.
+model.eval()
+_pred, _true = [], []
+with torch.no_grad():
+    for _batch in data_loader.get_batches(data_loader.test, args.batch, False):
+        _out, _ = model(_batch[0], _batch[2])
+        _pred.append(_out.cpu())
+        _true.append(_batch[1].cpu())
+_pred = torch.cat(_pred).numpy() * (data_loader.max - data_loader.min) + data_loader.min
+_true = torch.cat(_true).numpy() * (data_loader.max - data_loader.min) + data_loader.min
+_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+_pred_dir = os.path.join(_root, '..', 'MSAGAT-Net', 'report', 'predictions', args.dataset)
+os.makedirs(_pred_dir, exist_ok=True)
+_tok = 'epignn.%s.w-%s.h-%s.none.seed-%s' % (args.dataset, args.window, args.horizon, args.seed)
+np.savez_compressed(os.path.join(_pred_dir, _tok + '.npz'),
+                    y_true=_true, y_pred=_pred, model='epignn',
+                    dataset=args.dataset, horizon=args.horizon,
+                    window=args.window, seed=args.seed, ablation='none',
+                    protocol='lead_h')
+print('Predictions saved to %s' % os.path.join(_pred_dir, _tok + '.npz'))
