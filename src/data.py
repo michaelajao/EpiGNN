@@ -31,8 +31,14 @@ class DataBasicLoader(object):
 
         self.scale = np.ones(self.m)
 
-        self._pre_train(int(args.train * self.n), int((args.train + args.val) * self.n), self.n)
-        self._split(int(args.train * self.n), int((args.train + args.val) * self.n), self.n)
+        # --split_idx train_end,val_end,test_end (row indices) sets one fold
+        # of a rolling-origin evaluation; otherwise split by fractions.
+        if getattr(args, 'split_idx', None):
+            train, valid, test = (int(v) for v in args.split_idx.split(','))
+        else:
+            train, valid, test = int(args.train * self.n), int((args.train + args.val) * self.n), self.n
+        self._pre_train(train, valid, test)
+        self._split(train, valid, test)
         print('size of train/val/test sets',len(self.train[0]),len(self.val[0]),len(self.test[0]))
         self.device = device
     
@@ -78,7 +84,7 @@ class DataBasicLoader(object):
     def _pre_train(self, train, valid, test):
         self.train_set = train_set = range(self.P+self.h-1, train)
         self.valid_set = valid_set = range(train, valid)
-        self.test_set = test_set = range(valid, self.n)
+        self.test_set = test_set = range(valid, test)
         self.tmp_train = self._batchify(train_set, self.h, useraw=True)
         train_mx = torch.cat((self.tmp_train[0][0], self.tmp_train[1]), 0).numpy() #199, 47
         self.max = np.max(train_mx, 0)

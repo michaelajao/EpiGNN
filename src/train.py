@@ -44,6 +44,12 @@ ap.add_argument('--shuffle', action='store_true', default=False, help="not used,
 ap.add_argument('--train', type=float, default=.5, help="Training ratio (0, 1)")
 ap.add_argument('--val', type=float, default=.2, help="Validation ratio (0, 1)")
 ap.add_argument('--test', type=float, default=.3, help="Testing ratio (0, 1)")
+ap.add_argument('--split_idx', type=str, default=None,
+                help="train_end,val_end,test_end row indices; overrides "
+                     "--train/--val/--test (one rolling-origin fold)")
+ap.add_argument('--pred_dir', type=str, default=None,
+                help="directory for the test-prediction archive (default "
+                     "../MSAGAT-Net/report/predictions/<dataset>)")
 ap.add_argument('--mylog', action='store_false', default=True,  help='save tensorboad log')
 ap.add_argument('--cuda', action='store_true', default=False,  help='')
 ap.add_argument('--window', type=int, default=20, help='')
@@ -111,6 +117,9 @@ logger.info('cuda %s, using device %s', args.cuda, device)
 
 time_token = str(time.time()).split('.')[0] # tensorboard model
 log_token = '%s.%s.w-%s.h-%s.seed-%s' % (args.model, args.dataset, args.window, args.horizon, args.seed)
+# One checkpoint and one archive per fold when folds are given explicitly.
+split_tag = '.split-%s' % args.split_idx.replace(',', '-') if args.split_idx else ''
+log_token += split_tag
 
 if args.mylog:
     tensorboard_log_dir = 'tensorboard/%s' % (log_token)
@@ -362,9 +371,9 @@ with torch.no_grad():
 _pred = torch.cat(_pred).numpy() * (data_loader.max - data_loader.min) + data_loader.min
 _true = torch.cat(_true).numpy() * (data_loader.max - data_loader.min) + data_loader.min
 _root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-_pred_dir = os.path.join(_root, '..', 'MSAGAT-Net', 'report', 'predictions', args.dataset)
+_pred_dir = args.pred_dir or os.path.join(_root, '..', 'MSAGAT-Net', 'report', 'predictions', args.dataset)
 os.makedirs(_pred_dir, exist_ok=True)
-_tok = 'epignn.%s.w-%s.h-%s.none.seed-%s' % (args.dataset, args.window, args.horizon, args.seed)
+_tok = 'epignn.%s.w-%s.h-%s.none.seed-%s%s' % (args.dataset, args.window, args.horizon, args.seed, split_tag)
 np.savez_compressed(os.path.join(_pred_dir, _tok + '.npz'),
                     y_true=_true, y_pred=_pred, model='epignn',
                     dataset=args.dataset, horizon=args.horizon,
